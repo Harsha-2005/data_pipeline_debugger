@@ -10,7 +10,7 @@ def get_dashboard_html() -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenEnv Pipeline Debugger</title>
+    <title>OpenEnv Data Pipeline Debugger</title>
     <style>
         :root {
             --bg-color: #f9fafb;
@@ -366,7 +366,7 @@ def get_dashboard_html() -> str:
     <!-- ── Global Navigation Bar ────────────────────────── -->
     <nav class="topnav">
         <a class="topnav-brand" href="/">
-            <span class="logo-dot"></span> OpenEnv Debugger
+            <span class="logo-dot"></span> OpenEnv Data Pipeline Debugger
         </a>
         <div class="topnav-links">
             <a class="topnav-link active" href="/dashboard">
@@ -397,7 +397,7 @@ def get_dashboard_html() -> str:
 
     <nav class="sidebar">
         <div class="brand">
-            <h1>OpenEnv Debugger</h1>
+            <h1>OpenEnv Data Pipeline Debugger</h1>
         </div>
         
         <div class="nav-header">Workspace</div>

@@ -109,7 +109,7 @@ def get_compete_html() -> str:
 <body>
 
 <nav class="topnav">
-    <a class="topnav-brand" href="/"><span class="logo-dot"></span> OpenEnv Debugger</a>
+    <a class="topnav-brand" href="/"><span class="logo-dot"></span> OpenEnv Data Pipeline Debugger</a>
     <div class="topnav-links">
         <a class="topnav-link" href="/dashboard"><span>📊</span> Dashboard</a>
         <a class="topnav-link" href="/demo"><span>🎬</span> Demo</a>

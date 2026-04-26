@@ -17,7 +17,7 @@ def get_demo_html() -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenEnv Debugger — Auto-Demo</title>
+    <title>OpenEnv Data Pipeline Debugger — Auto-Demo</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -136,7 +136,7 @@ def get_demo_html() -> str:
 
     <!-- ── Shared Navbar ── -->
     <nav class="topnav">
-        <a class="topnav-brand" href="/"><span class="logo-dot"></span> OpenEnv Debugger</a>
+        <a class="topnav-brand" href="/"><span class="logo-dot"></span> OpenEnv Data Pipeline Debugger</a>
         <div class="topnav-links">
             <a class="topnav-link" href="/dashboard"><span class="nav-icon">📊</span> Dashboard</a>
             <a class="topnav-link active" href="/demo"><span class="nav-icon">🎬</span> Demo</a>
