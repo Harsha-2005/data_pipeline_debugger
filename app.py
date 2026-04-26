@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel
 
 from env.environment import DataPipelineEnv
@@ -287,6 +287,12 @@ def demo_mode():
             status_code=500,
         )
 
+@app.get("/model_performance.csv")
+def get_model_performance_csv():
+    if not os.path.exists("model_performance.csv"):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse("model_performance.csv", media_type="text/csv", filename="model_performance.csv")
+
 @app.get("/compete", response_class=HTMLResponse)
 def compete_mode():
     """Serve the side-by-side competition mode."""
@@ -361,6 +367,99 @@ def compete_run(task_id: str = "task_easy_schema_fix", seed: int = 42):
     except Exception as e:
         import traceback
         return {"status": "error", "message": str(e), "trace": traceback.format_exc()}
+
+
+@app.post("/api/compete-upload")
+async def compete_upload(file: UploadFile = File(...)):
+    """Upload a CSV and run both agents on it."""
+    import pandas as pd
+    import io
+    from env.environment import DataPipelineEnv, _df_to_data, _recompute_metrics
+    from env.models import SchemaField, Action
+    from benchmarks.agents import FixedStrategyAgent, GreedyAgent
+
+    content = await file.read()
+    try:
+        df = pd.read_csv(io.BytesIO(content))
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to parse CSV: {e}"}
+
+    if len(df) == 0:
+        return {"status": "error", "message": "CSV is empty."}
+
+    def setup_env(df_copy):
+        task_id = "task_easy_schema_fix"
+        env = DataPipelineEnv(task_id=task_id, seed=42)
+        env.reset()
+        env._df = df_copy.copy()
+        env.state.data = _df_to_data(env._df)
+        env.state.schema_info = [
+            SchemaField(name=col, expected_type=str(env._df[col].dtype), actual_type=str(env._df[col].dtype))
+            for col in env._df.columns
+        ]
+        env.state.metrics = _recompute_metrics(env.state.data, env.state.schema_info)
+        return env
+
+    def run_agent(agent, env_instance):
+        obs = env_instance.state
+        steps = []
+        cumulative = 0.0
+        agent.reset()
+        if hasattr(agent, "set_task"):
+            agent.set_task("task_easy_schema_fix")
+        max_steps = getattr(obs, "max_steps", 40) or 40
+        for step_idx in range(max_steps):
+            obs_dict = obs.model_dump() if hasattr(obs, "model_dump") else (obs.__dict__ if hasattr(obs, "__dict__") else dict(obs))
+            action_dict = agent.choose_action(obs_dict, step_idx)
+            from env.models import ActionType
+            try:
+                action = Action(action_type=ActionType(action_dict.get("action_type", "inspect")), column=action_dict.get("column"), value=action_dict.get("value"), parameters=action_dict.get("parameters"))
+                obs = env_instance.step(action)
+            except Exception as e:
+                steps.append({
+                    "step": step_idx + 1,
+                    "action": action_dict.get("action_type", str(action_dict)),
+                    "reward": 0.0,
+                    "cumulative": cumulative,
+                    "description": f"Error: {e}",
+                    "done": True,
+                })
+                break
+
+            if env_instance.history:
+                last_rec = env_instance.history[-1]
+                reward = float(last_rec.reward)
+                cumulative = float(last_rec.cumulative_reward)
+                desc = last_rec.description
+            else:
+                reward = 0.0
+                desc = ""
+            steps.append({
+                "step": step_idx + 1,
+                "action": action_dict.get("action_type", str(action_dict)),
+                "reward": round(reward, 4),
+                "cumulative": round(cumulative, 4),
+                "description": desc,
+                "done": bool(getattr(obs, "done", False)),
+            })
+            if getattr(obs, "done", False):
+                break
+        return steps, round(cumulative, 4)
+
+    env1 = setup_env(df)
+    env2 = setup_env(df)
+
+    steps1, score1 = run_agent(FixedStrategyAgent(), env1)
+    steps2, score2 = run_agent(GreedyAgent(), env2)
+
+    winner = "agent1" if score1 > score2 else ("agent2" if score2 > score1 else "tie")
+    return _sanitize_for_json({
+        "status": "ok",
+        "task_id": file.filename,
+        "agent1": {"name": "Fixed Strategy", "steps": steps1, "final_score": score1},
+        "agent2": {"name": "Greedy", "steps": steps2, "final_score": score2},
+        "winner": winner,
+    })
 
 
 @app.get("/api/benchmark")

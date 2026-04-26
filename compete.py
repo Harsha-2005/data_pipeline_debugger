@@ -53,6 +53,8 @@ def get_compete_html() -> str:
         button.primary { background:var(--primary-color); color:white; border-color:var(--primary-color); }
         button.primary:hover { background:var(--primary-hover); }
         button:disabled { opacity:0.5; cursor:not-allowed; }
+        a.button-link { padding:0.5rem 1rem; border:1px solid var(--primary-color); color:var(--primary-color); border-radius:4px; text-decoration:none; font-size:0.9rem; font-weight:500; transition:0.2s; background:var(--bg-card); }
+        a.button-link:hover { background: rgba(37,99,235,0.05); }
 
         /* ── Scoreboard ── */
         .scoreboard { display:grid; grid-template-columns:1fr auto 1fr; gap:0; margin-bottom:1.5rem; background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; overflow:hidden; }
@@ -132,7 +134,7 @@ def get_compete_html() -> str:
 
     <!-- Controls -->
     <div class="card">
-        <div class="ctrl-group">
+        <div class="ctrl-group" style="margin-bottom: 1rem;">
             <select id="taskSelect">
                 <option value="task_easy_schema_fix">Easy — Schema Fix</option>
                 <option value="task_medium_data_quality">Medium — Data Quality</option>
@@ -140,8 +142,15 @@ def get_compete_html() -> str:
                 <option value="task_veryhard_streaming_pipeline">Very Hard — Streaming Pipeline</option>
                 <option value="task_expert_multi_source_join">Expert — Multi-Source Join</option>
             </select>
-            <button class="primary" id="runBtn" onclick="startBattle()">▶ Start Battle</button>
+            <button class="primary" id="runBtn" onclick="startBattle()">▶ Start Predefined Battle</button>
+            <a href="/model_performance.csv" download class="button-link">📥 Download Model Performance</a>
             <span id="progText" style="font-size:0.85rem;color:var(--text-muted)"></span>
+        </div>
+        <div class="ctrl-group" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            <span style="font-weight:600;font-size:0.9rem;">OR Upload your own CSV dataset:</span>
+            <input type="file" id="csvFile" accept=".csv" style="border:1px solid var(--border-color); border-radius:4px; padding:0.4rem; font-size:0.85rem;">
+            <button class="primary" id="uploadBtn" onclick="startUploadBattle()" style="background:#059669; border-color:#059669;">▶ Battle on Custom CSV</button>
+            <span id="progText2" style="font-size:0.85rem;color:var(--text-muted)"></span>
         </div>
     </div>
 
@@ -343,13 +352,70 @@ function drawBarChart(canvasId, labels, datasets) {
     datasets.forEach(ds=>{ctx.fillStyle=ds.color;ctx.font='bold 9px Inter,sans-serif';ctx.textAlign='left';ctx.fillText('● '+ds.label,lx,pad.t-3);lx+=ctx.measureText('● '+ds.label).width+14;});
 }
 
+function renderCompeteResults(data) {
+    const banner = document.getElementById('winnerBanner');
+    // Render logs
+    renderLog('log1', data.agent1.steps);
+    renderLog('log2', data.agent2.steps);
+
+    // Animate scores
+    setTimeout(() => {
+        animateScore('score1', data.agent1.final_score);
+        animateScore('score2', data.agent2.final_score);
+        document.getElementById('meta1').textContent = data.agent1.steps.length + ' steps';
+        document.getElementById('meta2').textContent = data.agent2.steps.length + ' steps';
+    }, 200);
+
+    // Winner
+    setTimeout(() => {
+        const s1 = data.agent1.final_score.toFixed(4), s2 = data.agent2.final_score.toFixed(4);
+        if (data.winner === 'agent1') {
+            banner.className = 'winner-banner show blue-win';
+            banner.innerHTML = `🏆 <strong>Fixed Strategy Wins!</strong> — Score ${s1} vs ${s2}`;
+        } else if (data.winner === 'agent2') {
+            banner.className = 'winner-banner show green-win';
+            banner.innerHTML = `🏆 <strong>Greedy Agent Wins!</strong> — Score ${s2} vs ${s1}`;
+        } else {
+            banner.className = 'winner-banner show tie-win';
+            banner.innerHTML = `🤝 <strong>It's a Tie!</strong> — Both scored ${s1}`;
+        }
+    }, 800);
+
+    // Draw charts
+    setTimeout(() => {
+        document.getElementById('chartsArea').style.display = 'grid';
+        const maxLen = Math.max(data.agent1.steps.length, data.agent2.steps.length);
+        const labels = Array.from({length:maxLen}, (_,i) => 'S'+(i+1));
+        const cum1 = data.agent1.steps.map(s => s.cumulative);
+        const cum2 = data.agent2.steps.map(s => s.cumulative);
+        while(cum1.length < maxLen) cum1.push(cum1[cum1.length-1]||0);
+        while(cum2.length < maxLen) cum2.push(cum2[cum2.length-1]||0);
+
+        requestAnimationFrame(() => {
+            drawLineChart('rewardChart', labels, [
+                {label:'Fixed Strategy', values:cum1, color:'#2563eb'},
+                {label:'Greedy Agent', values:cum2, color:'#059669'},
+            ]);
+            const rew1 = data.agent1.steps.map(s => s.reward);
+            const rew2 = data.agent2.steps.map(s => s.reward);
+            while(rew1.length < maxLen) rew1.push(0);
+            while(rew2.length < maxLen) rew2.push(0);
+            drawBarChart('stepChart', labels, [
+                {label:'Fixed Strategy', values:rew1, color:'#2563eb'},
+                {label:'Greedy Agent', values:rew2, color:'#059669'},
+            ]);
+        });
+    }, 500);
+}
+
 async function startBattle() {
     const task = document.getElementById('taskSelect').value;
     const btn = document.getElementById('runBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
     const prog = document.getElementById('progText');
     const banner = document.getElementById('winnerBanner');
 
-    btn.disabled = true; btn.textContent = '⏳ Running...';
+    btn.disabled = true; if(uploadBtn) uploadBtn.disabled = true; btn.textContent = '⏳ Running...';
     banner.className = 'winner-banner'; banner.style.display = 'none';
     document.getElementById('log1').innerHTML = '<div class="log-empty">⚙️ Running…</div>';
     document.getElementById('log2').innerHTML = '<div class="log-empty">⚙️ Running…</div>';
@@ -364,66 +430,49 @@ async function startBattle() {
         const res = await fetch(`/api/compete-run?task_id=${encodeURIComponent(task)}&seed=42`);
         const data = await res.json();
         if (data.status !== 'ok') { alert('Error: ' + (data.message || JSON.stringify(data))); return; }
-
-        // Render logs
-        renderLog('log1', data.agent1.steps);
-        renderLog('log2', data.agent2.steps);
-
-        // Animate scores
-        setTimeout(() => {
-            animateScore('score1', data.agent1.final_score);
-            animateScore('score2', data.agent2.final_score);
-            document.getElementById('meta1').textContent = data.agent1.steps.length + ' steps';
-            document.getElementById('meta2').textContent = data.agent2.steps.length + ' steps';
-        }, 200);
-
-        // Winner
-        setTimeout(() => {
-            const s1 = data.agent1.final_score.toFixed(4), s2 = data.agent2.final_score.toFixed(4);
-            if (data.winner === 'agent1') {
-                banner.className = 'winner-banner show blue-win';
-                banner.innerHTML = `🏆 <strong>Fixed Strategy Wins!</strong> — Score ${s1} vs ${s2}`;
-            } else if (data.winner === 'agent2') {
-                banner.className = 'winner-banner show green-win';
-                banner.innerHTML = `🏆 <strong>Greedy Agent Wins!</strong> — Score ${s2} vs ${s1}`;
-            } else {
-                banner.className = 'winner-banner show tie-win';
-                banner.innerHTML = `🤝 <strong>It's a Tie!</strong> — Both scored ${s1}`;
-            }
-        }, 800);
-
-        // Draw charts
-        setTimeout(() => {
-            document.getElementById('chartsArea').style.display = 'grid';
-            const maxLen = Math.max(data.agent1.steps.length, data.agent2.steps.length);
-            const labels = Array.from({length:maxLen}, (_,i) => 'S'+(i+1));
-            const cum1 = data.agent1.steps.map(s => s.cumulative);
-            const cum2 = data.agent2.steps.map(s => s.cumulative);
-            // Pad shorter array
-            while(cum1.length < maxLen) cum1.push(cum1[cum1.length-1]||0);
-            while(cum2.length < maxLen) cum2.push(cum2[cum2.length-1]||0);
-
-            requestAnimationFrame(() => {
-                drawLineChart('rewardChart', labels, [
-                    {label:'Fixed Strategy', values:cum1, color:'#2563eb'},
-                    {label:'Greedy Agent', values:cum2, color:'#059669'},
-                ]);
-                const rew1 = data.agent1.steps.map(s => s.reward);
-                const rew2 = data.agent2.steps.map(s => s.reward);
-                while(rew1.length < maxLen) rew1.push(0);
-                while(rew2.length < maxLen) rew2.push(0);
-                drawBarChart('stepChart', labels, [
-                    {label:'Fixed Strategy', values:rew1, color:'#2563eb'},
-                    {label:'Greedy Agent', values:rew2, color:'#059669'},
-                ]);
-            });
-        }, 500);
-
+        renderCompeteResults(data);
         prog.textContent = 'Battle complete!';
     } catch (err) {
         prog.textContent = 'Error: ' + err.message;
     } finally {
-        btn.disabled = false; btn.textContent = '▶ Start Battle';
+        btn.disabled = false; if(uploadBtn) uploadBtn.disabled = false; btn.textContent = '▶ Start Predefined Battle';
+    }
+}
+
+async function startUploadBattle() {
+    const fileInput = document.getElementById('csvFile');
+    if (!fileInput.files.length) { alert("Please select a CSV file first!"); return; }
+    
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const btn = document.getElementById('uploadBtn');
+    const runBtn = document.getElementById('runBtn');
+    const prog = document.getElementById('progText2');
+    const banner = document.getElementById('winnerBanner');
+
+    btn.disabled = true; runBtn.disabled = true; btn.textContent = '⏳ Uploading & Running...';
+    banner.className = 'winner-banner'; banner.style.display = 'none';
+    document.getElementById('log1').innerHTML = '<div class="log-empty">⚙️ Running…</div>';
+    document.getElementById('log2').innerHTML = '<div class="log-empty">⚙️ Running…</div>';
+    document.getElementById('score1').textContent = '…';
+    document.getElementById('score2').textContent = '…';
+    document.getElementById('meta1').textContent = '';
+    document.getElementById('meta2').textContent = '';
+    document.getElementById('chartsArea').style.display = 'none';
+    prog.textContent = 'Executing agents on custom dataset ' + file.name + '…';
+
+    try {
+        const res = await fetch(`/api/compete-upload`, { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.status !== 'ok') { alert('Error: ' + (data.message || JSON.stringify(data))); return; }
+        renderCompeteResults(data);
+        prog.textContent = 'Battle complete!';
+    } catch (err) {
+        prog.textContent = 'Error: ' + err.message;
+    } finally {
+        btn.disabled = false; runBtn.disabled = false; btn.textContent = '▶ Battle on Custom CSV';
     }
 }
 </script>
